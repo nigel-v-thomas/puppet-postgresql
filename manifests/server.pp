@@ -4,22 +4,60 @@ class postgresql::server (
   $version = $postgresql::params::version,
   $listen = $postgresql::params::listen_address,
   $port = $postgresql::params::port,
-  $acl = []
+  $acl = [],
+  $standard_conforming_strings = $postgresql::params::standard_conforming_strings,
+  $shared_buffers = $postgresql::params::shared_buffers,
+  $checkpoint_segments = $postgresql::params::checkpoint_segments,
+  $maintenanceworkmem = $postgresql::params::maintenanceworkmem,
+  $tcpip_socket = $postgresql::params::tcpip_socket,
+  $max_connections = $postgresql::params::max_connections,
+  $checkpoint_timeout = $postgresql::params::checkpoint_timeout,
+  $datestyle = $postgresql::params::datestyle,
+  $autovacuum = $postgresql::params::autovacuum,
 ) inherits postgresql::params {
 
-  package { "postgresql-server-$version":
+  
+  case $version {
+    '8.4': {
+      $postgressqlServerVersion = "postgresql-$version"
+      $postgressqlServiceVersion = "postgresql-$version"
+ 
+      # postgres 8.4 and ubuntu only bug fix... http://askubuntu.com/questions/44373/how-to-fix-postgresql-installation
+      file { "postgresql-server-os-kernel-environment-tweak":
+        name    => "/etc/sysctl.d/30-postgresql-tweak.conf",
+        ensure  => present,
+        content => template('postgresql/postgresql-shm.conf.erb'),
+        mode    => '0644',
+        before =>  Package[$postgressqlServerVersion],
+      }
+        
+      exec { "postgresql-server-os-kernel-environment-refresh":
+        command => ["sysctl -p"],
+        path => ["/bin", "/usr/bin", "/usr/sbin", "/sbin"],
+        onlyif => "test `sysctl -a | grep -c kernel.shmmax` = 0",
+        require => File["postgresql-server-os-kernel-environment-tweak"],
+      }
+    }
+    default: {
+        $postgressqlServerVersion = "postgresql-server-$version"
+        $postgressqlServiceVersion = "postgresql"
+    }
+  }
+  
+  package { $postgressqlServerVersion:
     name    => sprintf("%s-%s", $server_package, $version),
     ensure  => present,
   }
 
-  service { "postgresql-system-$version":
-    name        => 'postgresql',
+  service { "postgresql":
+    name        => $postgressqlServiceVersion,
     enable      => true,
     ensure      => running,
     hasstatus   => false,
     hasrestart  => true,
     provider    => 'debian',
-    subscribe   => Package["postgresql-server-$version"],
+    require => Package[$postgressqlServerVersion],
+    subscribe   => Package[$postgressqlServerVersion],
   }
 
   file { "postgresql-server-config-$version":
@@ -29,8 +67,8 @@ class postgresql::server (
     owner   => 'postgres',
     group   => 'postgres',
     mode    => '0644',
-    require => Package["postgresql-server-$version"],
-    notify  => Service["postgresql-system-$version"],
+    require => Package[$postgressqlServerVersion],
+    notify  => Service["postgresql"],
   }
 
   file { "postgresql-server-hba-config-$version":
@@ -40,8 +78,8 @@ class postgresql::server (
     owner   => 'postgres',
     group   => 'postgres',
     mode    => '0640',
-    require => Package["postgresql-server-$version"],
-    notify  => Service["postgresql-system-$version"],
+    require => Package[$postgressqlServerVersion],
+    notify  => Service["postgresql"],
   }
 
 }

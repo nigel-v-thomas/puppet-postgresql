@@ -9,12 +9,13 @@ define postgresql::db (
     pg_user {$owner:
         ensure      => present,
         password    => $password,
+        require => Service['postgresql'],
     }
 
     pg_database {$name:
         ensure      => present,
         owner       => $owner,
-        require     => Pg_user[$owner],
+        require     => [Pg_user[$owner], Service['postgresql-8.4']],
         encoding    => $encoding,
         locale      => $locale,
         template    => $template,
